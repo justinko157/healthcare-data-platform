@@ -75,7 +75,7 @@ class FakeCursor:
         self.log.append(statement)
         self.params.append(params)
         if self.fail_on and statement.lower().startswith(self.fail_on):
-            raise RuntimeError("boom")
+            raise RuntimeError(f"boom: {statement.lower()[:20]}")
 
     def fetchone(self):
         return (42,)
@@ -129,6 +129,19 @@ def test_snowflake_loader_rolls_back_when_copy_fails(tiny_sample):
         loaders.SnowflakeLoader(conn).load_table("payers", tiny_sample / "payers.csv", "20260101")
     assert conn.log[-1] == "rollback"
     assert "commit" not in conn.log
+
+
+def test_snowflake_loader_skips_rollback_when_failure_precedes_begin(tiny_sample):
+    conn = FakeConn(fail_on="put ")
+    with pytest.raises(RuntimeError, match="boom: put"):
+        loaders.SnowflakeLoader(conn).load_table("payers", tiny_sample / "payers.csv", "20260101")
+    assert "rollback" not in conn.log  # no transaction was open
+
+
+def test_snowflake_loader_keeps_original_error_when_rollback_fails(tiny_sample):
+    conn = FakeConn(fail_on=("copy into", "rollback"))
+    with pytest.raises(RuntimeError, match="boom: copy into"):
+        loaders.SnowflakeLoader(conn).load_table("payers", tiny_sample / "payers.csv", "20260101")
 
 
 def test_duckdb_file_is_readable_by_a_second_connection_after_close(tmp_path, tiny_sample):

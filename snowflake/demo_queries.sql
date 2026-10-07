@@ -1,5 +1,5 @@
 -- Masked vs unmasked proof. Run in Snowsight as your own login after a successful
--- WAREHOUSE=snowflake pipeline run. Paste the outputs into the README.
+-- WAREHOUSE=snowflake pipeline run. Captured outputs: docs/snowflake_demo_output.md.
 use secondary roles none;   -- each query sees exactly one role's privileges
 use warehouse HDP_WH;
 
@@ -24,5 +24,6 @@ from HEALTHCARE.MARTS.FCT_ENCOUNTERS e
 join HEALTHCARE.MARTS.DIM_PATIENTS p on p.patient_id = e.patient_id;
 
 -- 4. Least privilege: ANALYST cannot see RAW.
---    Expected error: "Object 'HEALTHCARE.RAW.PATIENTS' does not exist or not authorized."
+--    Expected: an error that RAW "does not exist or not authorized" (ANALYST has no USAGE on
+--    the schema, so Snowflake reports it at schema level).
 select count(*) from HEALTHCARE.RAW.PATIENTS;

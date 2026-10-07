@@ -123,6 +123,7 @@ class SnowflakeLoader:
         positions = ", ".join(f"${i}" for i in range(1, len(columns) + 1))
         staged = f"@{self.STAGE}/{batch_id}/{csv_path.name}.gz"
         cur = self.conn.cursor()
+        in_transaction = False
         try:
             self._ensure_stage(cur)
             cur.execute(
@@ -135,6 +136,7 @@ class SnowflakeLoader:
                 "overwrite = true auto_compress = true"
             )
             cur.execute("begin")
+            in_transaction = True
             cur.execute(f"delete from {target} where _BATCH_ID = %s", (batch_id,))
             cur.execute(
                 f"copy into {target} ({quoted}, _BATCH_ID, _LOADED_AT) "
@@ -145,7 +147,12 @@ class SnowflakeLoader:
             (rows,) = cur.fetchone()
             cur.execute("commit")
         except Exception:
-            cur.execute("rollback")
+            if in_transaction:
+                try:
+                    cur.execute("rollback")
+                except Exception:
+                    # Keep the original error; a failed rollback on a dead connection is noise.
+                    log.exception("rollback of %s failed", target)
             raise
         finally:
             cur.close()

@@ -71,9 +71,25 @@ export DATA_DIR=/tmp/hdp-dev DUCKDB_PATH=/tmp/hdp-dev/warehouse.duckdb
 
 ### Masked vs unmasked
 
-The sample outputs for the `ANALYST` and `PHI_READER` roles will be added after the first Snowflake run. Until then, [`snowflake/demo_queries.sql`](snowflake/demo_queries.sql) has the exact queries: the same three patients as `ANALYST` (masked) and as `PHI_READER` (unmasked), a join-and-count as `ANALYST`, and a check that `ANALYST` cannot read `RAW`.
+The same three patients, from a real Snowflake trial run ([`snowflake/demo_queries.sql`](snowflake/demo_queries.sql); all data is synthetic).
 
-Analysts can still join and count, because `patient_id` is hashed the same way in every mart.
+As `ANALYST`:
+
+| PATIENT_ID | FIRST_NAME | LAST_NAME | SSN | BIRTH_DATE | CITY | AGE_YEARS |
+|---|---|---|---|---|---|---|
+| 06f3e58e47fe…26ffdf | \*\*\*MASKED\*\*\* | \*\*\*MASKED\*\*\* | \*\*\*MASKED\*\*\* | 1988-01-01 | Dedham | 38 |
+| 087fad91eb6f…5e76b6 | \*\*\*MASKED\*\*\* | \*\*\*MASKED\*\*\* | \*\*\*MASKED\*\*\* | 1973-01-01 | Revere | 53 |
+| 0b90364376a1…3fc5d | \*\*\*MASKED\*\*\* | \*\*\*MASKED\*\*\* | \*\*\*MASKED\*\*\* | 2015-01-01 | Boston | 11 |
+
+As `PHI_READER`:
+
+| PATIENT_ID | FIRST_NAME | LAST_NAME | SSN | BIRTH_DATE | CITY | AGE_YEARS |
+|---|---|---|---|---|---|---|
+| f3aa70e2-d777-e5ba-288f-aa5469241c9d | Lavelle273 | Hilll811 | 999-15-3798 | 1988-03-26 | Dedham | 38 |
+| 5e30f14c-15ab-b668-fb6f-03fb3c3f4e66 | Wilburn655 | Goodwin327 | 999-89-7733 | 1973-04-12 | Revere | 53 |
+| 821038cb-93d8-070c-3e45-ba5c391a2601 | Hanh683 | Walsh511 | 999-72-4527 | 2015-08-16 | Boston | 11 |
+
+Analysts can still join and count, because `patient_id` is hashed the same way in every mart: as `ANALYST`, `FCT_ENCOUNTERS` joins to `DIM_PATIENTS` on 1,596 encounters. And `ANALYST` cannot see raw data at all: `select count(*) from HEALTHCARE.RAW.PATIENTS` fails with *"Schema 'HEALTHCARE.RAW' does not exist or not authorized."* Full output, including which policies are attached to which columns: [`docs/snowflake_demo_output.md`](docs/snowflake_demo_output.md).
 
 This masks direct identifiers, which makes the `ANALYST` view a limited data set. It is **not** HIPAA Safe Harbor de-identification: analysts still see exact encounter, discharge and readmission timestamps, city, county and state, exact age in years, and gender, race, ethnicity and marital status.
 
