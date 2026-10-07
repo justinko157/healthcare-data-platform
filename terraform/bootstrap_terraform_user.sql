@@ -25,12 +25,12 @@ grant ownership on schema HEALTHCARE.STAGING to role SYSADMIN copy current grant
 grant ownership on schema HEALTHCARE.INTERMEDIATE to role SYSADMIN copy current grants;
 grant ownership on schema HEALTHCARE.MARTS to role SYSADMIN copy current grants;
 grant ownership on schema HEALTHCARE.SECURITY to role SYSADMIN copy current grants;
-grant ownership on role LOADER to role SECURITYADMIN;
-grant ownership on role TRANSFORMER to role SECURITYADMIN;
-grant ownership on role ANALYST to role SECURITYADMIN;
-grant ownership on role PHI_READER to role SECURITYADMIN;
-grant ownership on role PLATFORM_ADMIN to role SECURITYADMIN;
-grant ownership on user HDP_SERVICE to role SECURITYADMIN;
+grant ownership on role LOADER to role SECURITYADMIN copy current grants;
+grant ownership on role TRANSFORMER to role SECURITYADMIN copy current grants;
+grant ownership on role ANALYST to role SECURITYADMIN copy current grants;
+grant ownership on role PHI_READER to role SECURITYADMIN copy current grants;
+grant ownership on role PLATFORM_ADMIN to role SECURITYADMIN copy current grants;
+grant ownership on user HDP_SERVICE to role SECURITYADMIN copy current grants;
 -- The old script gave PLATFORM_ADMIN warehouse usage it doesn't need. Terraform can't revoke a
 -- grant it doesn't describe, so the cut is made here; the Terraform config never grants it.
 revoke usage on warehouse HDP_WH from role PLATFORM_ADMIN;

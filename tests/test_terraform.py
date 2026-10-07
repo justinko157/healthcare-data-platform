@@ -40,3 +40,12 @@ def test_declared_roles_cover_every_role_masking_relies_on():
 
     assert used == {"PHI_READER", "TRANSFORMER", "ANALYST"}
     assert used <= declared_roles()
+
+
+def test_bootstrap_ownership_transfers_keep_existing_grants():
+    # Without COPY CURRENT GRANTS, Snowflake refuses to move a role that is granted to SYSADMIN
+    # ("Dependent grant of privilege 'USAGE' ... exists").
+    snippet = (TF / "bootstrap_terraform_user.sql").read_text().lower()
+    transfers = [line for line in snippet.splitlines() if line.startswith("grant ownership")]
+    assert len(transfers) == 13
+    assert all(line.endswith("copy current grants;") for line in transfers)
