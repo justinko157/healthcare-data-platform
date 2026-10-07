@@ -1,17 +1,8 @@
-import csv
-
 import yaml
 
 from ingest.config import REPO_ROOT
 
 PROJECT = yaml.safe_load((REPO_ROOT / "dbt" / "dbt_project.yml").read_text())
-
-
-def test_sample_encounter_classes_are_all_accepted():
-    accepted = set(PROJECT["vars"]["encounter_classes"])
-    with (REPO_ROOT / "sample_data" / "encounters.csv").open(newline="", encoding="utf-8") as f:
-        seen = {row["ENCOUNTERCLASS"].lower() for row in csv.DictReader(f)}
-    assert seen <= accepted, f"add to vars.encounter_classes: {sorted(seen - accepted)}"
 
 
 POLICIES_SQL = (REPO_ROOT / "snowflake" / "policies.sql").read_text().lower()

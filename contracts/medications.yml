@@ -1,0 +1,11 @@
+table: medications
+min_rows: 1
+columns:
+  START:       {type: timestamp, tests: [not_null]}
+  STOP:        {type: timestamp}
+  PATIENT:     {type: uuid, pii: true, tests: [not_null, {relationships: {to: patients, field: ID}}]}
+  PAYER:       {type: uuid, tests: [{relationships: {to: payers, field: ID}}]}
+  ENCOUNTER:   {type: uuid, tests: [not_null, {relationships: {to: encounters, field: ID}}]}
+  CODE:        {type: string, tests: [not_null]}
+  DESCRIPTION: {type: string}
+  TOTALCOST:   {type: decimal}

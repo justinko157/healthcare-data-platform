@@ -1,0 +1,25 @@
+# Synthea patients.csv. Columns are those the dbt staging models read; Synthea writes more, and
+# extra columns are loaded to RAW and ignored. pii: true keeps example values out of logs/Postgres.
+table: patients
+min_rows: 1
+columns:
+  ID:        {type: uuid, pii: true, tests: [not_null, unique]}
+  BIRTHDATE: {type: date, pii: true, tests: [not_null]}
+  DEATHDATE: {type: date, pii: true}
+  SSN:       {type: string, pii: true}
+  DRIVERS:   {type: string, pii: true}
+  PASSPORT:  {type: string, pii: true}
+  PREFIX:    {type: string}
+  FIRST:     {type: string, pii: true}
+  LAST:      {type: string, pii: true}
+  SUFFIX:    {type: string}
+  MAIDEN:    {type: string, pii: true}
+  MARITAL:   {type: string}
+  RACE:      {type: string}
+  ETHNICITY: {type: string}
+  GENDER:    {type: string, tests: [{accepted_values: {values: [M, F]}}]}
+  ADDRESS:   {type: string, pii: true}
+  CITY:      {type: string}
+  STATE:     {type: string}
+  COUNTY:    {type: string}
+  ZIP:       {type: string, pii: true}  # string: leading zeros

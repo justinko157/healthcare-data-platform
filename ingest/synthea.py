@@ -11,6 +11,8 @@ import subprocess
 from datetime import date
 from pathlib import Path
 
+from ingest.contracts import load_contracts, required_columns
+
 log = logging.getLogger(__name__)
 _BATCH_DIR = re.compile(r"^\d{8}$")
 
@@ -27,63 +29,6 @@ TABLES = (
 
 # Written next to the CSVs by `generate`; the loader reads only TABLES, so it is never loaded.
 MANIFEST = "_manifest.json"
-
-# Columns the dbt staging models read (upper case; the loader upper-cases headers).
-# Synthea writes more columns; extras are loaded to RAW and ignored by dbt.
-REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
-    "patients": (
-        "ID",
-        "BIRTHDATE",
-        "DEATHDATE",
-        "SSN",
-        "DRIVERS",
-        "PASSPORT",
-        "PREFIX",
-        "FIRST",
-        "LAST",
-        "SUFFIX",
-        "MAIDEN",
-        "MARITAL",
-        "RACE",
-        "ETHNICITY",
-        "GENDER",
-        "ADDRESS",
-        "CITY",
-        "STATE",
-        "COUNTY",
-        "ZIP",
-    ),
-    "encounters": (
-        "ID",
-        "START",
-        "STOP",
-        "PATIENT",
-        "ORGANIZATION",
-        "PROVIDER",
-        "PAYER",
-        "ENCOUNTERCLASS",
-        "CODE",
-        "DESCRIPTION",
-        "BASE_ENCOUNTER_COST",
-        "TOTAL_CLAIM_COST",
-        "PAYER_COVERAGE",
-    ),
-    "conditions": ("START", "STOP", "PATIENT", "ENCOUNTER", "CODE", "DESCRIPTION"),
-    "medications": (
-        "START",
-        "STOP",
-        "PATIENT",
-        "PAYER",
-        "ENCOUNTER",
-        "CODE",
-        "DESCRIPTION",
-        "TOTALCOST",
-    ),
-    "claims": ("ID", "PATIENTID", "PROVIDERID", "APPOINTMENTID", "SERVICEDATE"),
-    "claims_transactions": ("ID", "CLAIMID", "PATIENTID", "TYPE", "AMOUNT", "UNITS"),
-    "providers": ("ID", "ORGANIZATION", "NAME", "GENDER", "SPECIALITY", "STATE"),
-    "payers": ("ID", "NAME"),
-}
 
 # Tables filtered to the sampled patients. providers and payers are reference data.
 PATIENT_COLUMN = {
@@ -114,9 +59,12 @@ def read_header(csv_path: Path) -> list[str]:
 
 
 def validate_headers(directory: Path) -> None:
-    """Fail early, naming every problem, when a batch doesn't match what dbt expects."""
+    """Fail early, naming every problem, when a batch lacks columns its contracts require.
+
+    The full contract check (types, keys, relationships) runs in its own task, check_contracts.
+    """
     problems = []
-    for table, required in REQUIRED_COLUMNS.items():
+    for table, required in required_columns(load_contracts()).items():
         path = directory / f"{table}.csv"
         if not path.is_file():
             problems.append(f"{table}.csv is missing")

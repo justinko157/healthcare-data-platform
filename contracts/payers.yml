@@ -1,0 +1,6 @@
+# Reference data: written whole every batch, not filtered to the sampled patients.
+table: payers
+min_rows: 1
+columns:
+  ID:   {type: uuid, tests: [not_null, unique]}
+  NAME: {type: string, tests: [not_null]}

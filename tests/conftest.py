@@ -1,14 +1,22 @@
 import csv
+import uuid
 from pathlib import Path
 
 import pytest
 
-from ingest.synthea import REQUIRED_COLUMNS
+from ingest.contracts import load_contracts, required_columns
+
+REQUIRED = required_columns(load_contracts())
+
+
+def uid(kind: str, i: int = 0) -> str:
+    """Stable UUIDs, so tiny_sample passes the contracts' uuid types."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"hdp-test/{kind}/{i}"))
 
 
 def synthea_header(table: str) -> list[str]:
     # Synthea writes "Id" in mixed case; the loader upper-cases headers.
-    return ["Id" if c == "ID" else c for c in REQUIRED_COLUMNS[table]]
+    return ["Id" if c == "ID" else c for c in REQUIRED[table]]
 
 
 def write_rows(path: Path, table: str, rows: list[dict[str, str]]) -> None:
@@ -22,10 +30,10 @@ def write_rows(path: Path, table: str, rows: list[dict[str, str]]) -> None:
 
 @pytest.fixture
 def tiny_sample(tmp_path: Path) -> Path:
-    """Ten patients, one encounter/claim/charge each, valid against REQUIRED_COLUMNS."""
+    """Ten patients, one encounter/claim/charge each, valid against the contracts."""
     d = tmp_path / "sample"
     d.mkdir()
-    ids = [f"p{i}" for i in range(10)]
+    ids = [uid("patient", i) for i in range(10)]
     write_rows(
         d / "patients.csv",
         "patients",
@@ -48,11 +56,11 @@ def tiny_sample(tmp_path: Path) -> Path:
         "encounters",
         [
             {
-                "ID": f"e{i}",
+                "ID": uid("encounter", i),
                 "PATIENT": p,
-                "PROVIDER": "pr1",
-                "PAYER": "py1",
-                "ORGANIZATION": "o1",
+                "PROVIDER": uid("provider"),
+                "PAYER": uid("payer"),
+                "ORGANIZATION": uid("organization"),
                 "ENCOUNTERCLASS": "ambulatory",
                 "CODE": "1",
                 "DESCRIPTION": "visit",
@@ -72,7 +80,7 @@ def tiny_sample(tmp_path: Path) -> Path:
             {
                 "START": "2025-12-01",
                 "PATIENT": p,
-                "ENCOUNTER": f"e{i}",
+                "ENCOUNTER": uid("encounter", i),
                 "CODE": "2",
                 "DESCRIPTION": "cond",
             }
@@ -86,8 +94,8 @@ def tiny_sample(tmp_path: Path) -> Path:
             {
                 "START": "2025-12-01T10:00:00Z",
                 "PATIENT": p,
-                "PAYER": "py1",
-                "ENCOUNTER": f"e{i}",
+                "PAYER": uid("payer"),
+                "ENCOUNTER": uid("encounter", i),
                 "CODE": "3",
                 "DESCRIPTION": "med",
                 "TOTALCOST": "5.00",
@@ -100,10 +108,10 @@ def tiny_sample(tmp_path: Path) -> Path:
         "claims",
         [
             {
-                "ID": f"c{i}",
+                "ID": uid("claim", i),
                 "PATIENTID": p,
-                "PROVIDERID": "pr1",
-                "APPOINTMENTID": f"e{i}",
+                "PROVIDERID": uid("provider"),
+                "APPOINTMENTID": uid("encounter", i),
                 "SERVICEDATE": "2025-12-01T10:00:00Z",
             }
             for i, p in enumerate(ids)
@@ -114,8 +122,8 @@ def tiny_sample(tmp_path: Path) -> Path:
         "claims_transactions",
         [
             {
-                "ID": f"t{i}",
-                "CLAIMID": f"c{i}",
+                "ID": uid("transaction", i),
+                "CLAIMID": uid("claim", i),
                 "PATIENTID": p,
                 "TYPE": "CHARGE",
                 "AMOUNT": "100.00",
@@ -129,8 +137,8 @@ def tiny_sample(tmp_path: Path) -> Path:
         "providers",
         [
             {
-                "ID": "pr1",
-                "ORGANIZATION": "o1",
+                "ID": uid("provider"),
+                "ORGANIZATION": uid("organization"),
                 "NAME": "Dr. Who",
                 "GENDER": "M",
                 "SPECIALITY": "GENERAL PRACTICE",
@@ -138,5 +146,5 @@ def tiny_sample(tmp_path: Path) -> Path:
             }
         ],
     )
-    write_rows(d / "payers.csv", "payers", [{"ID": "py1", "NAME": "Medicare"}])
+    write_rows(d / "payers.csv", "payers", [{"ID": uid("payer"), "NAME": "Medicare"}])
     return d

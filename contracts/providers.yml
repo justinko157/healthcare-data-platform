@@ -1,0 +1,10 @@
+# Reference data: written whole every batch, not filtered to the sampled patients.
+table: providers
+min_rows: 1
+columns:
+  ID:           {type: uuid, tests: [not_null, unique]}
+  ORGANIZATION: {type: uuid}
+  NAME:         {type: string}
+  GENDER:       {type: string, tests: [{accepted_values: {values: [M, F]}}]}
+  SPECIALITY:   {type: string}
+  STATE:        {type: string}

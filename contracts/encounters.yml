@@ -1,0 +1,17 @@
+table: encounters
+min_rows: 1
+columns:
+  ID:                  {type: uuid, tests: [not_null, unique]}
+  START:               {type: timestamp, tests: [not_null]}
+  STOP:                {type: timestamp}
+  PATIENT:             {type: uuid, pii: true, tests: [not_null, {relationships: {to: patients, field: ID}}]}
+  ORGANIZATION:        {type: uuid}
+  PROVIDER:            {type: uuid, tests: [{relationships: {to: providers, field: ID}}]}
+  PAYER:               {type: uuid, tests: [{relationships: {to: payers, field: ID}}]}
+  # warn: a new Synthea encounter class should be added to dbt's vars, not stop the nightly run.
+  ENCOUNTERCLASS:      {type: string, tests: [not_null, {accepted_values: {values_from: {dbt_var: encounter_classes}, severity: warn}}]}
+  CODE:                {type: string}
+  DESCRIPTION:         {type: string}
+  BASE_ENCOUNTER_COST: {type: decimal}
+  TOTAL_CLAIM_COST:    {type: decimal}
+  PAYER_COVERAGE:      {type: decimal}

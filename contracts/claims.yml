@@ -1,0 +1,8 @@
+table: claims
+min_rows: 1
+columns:
+  ID:            {type: uuid, tests: [not_null, unique]}
+  PATIENTID:     {type: uuid, pii: true, tests: [not_null, {relationships: {to: patients, field: ID}}]}
+  PROVIDERID:    {type: uuid, tests: [{relationships: {to: providers, field: ID}}]}
+  APPOINTMENTID: {type: uuid, tests: [{relationships: {to: encounters, field: ID}}]}
+  SERVICEDATE:   {type: timestamp, tests: [not_null]}

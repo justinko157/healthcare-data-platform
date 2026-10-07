@@ -1,0 +1,10 @@
+table: claims_transactions
+min_rows: 1
+columns:
+  ID:        {type: uuid, tests: [not_null, unique]}
+  CLAIMID:   {type: uuid, tests: [not_null, {relationships: {to: claims, field: ID}}]}
+  PATIENTID: {type: uuid, pii: true, tests: [not_null, {relationships: {to: patients, field: ID}}]}
+  # warn: dbt only sums CHARGE rows; another type is worth seeing but not worth a failed run.
+  TYPE:      {type: string, tests: [not_null, {accepted_values: {values: [CHARGE, PAYMENT, ADJUSTMENT, TRANSFERIN, TRANSFEROUT], severity: warn}}]}
+  AMOUNT:    {type: decimal}
+  UNITS:     {type: integer}

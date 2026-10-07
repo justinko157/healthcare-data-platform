@@ -1,0 +1,9 @@
+table: conditions
+min_rows: 1
+columns:
+  START:       {type: date, tests: [not_null]}
+  STOP:        {type: date}
+  PATIENT:     {type: uuid, pii: true, tests: [not_null, {relationships: {to: patients, field: ID}}]}
+  ENCOUNTER:   {type: uuid, tests: [not_null, {relationships: {to: encounters, field: ID}}]}
+  CODE:        {type: string, tests: [not_null]}
+  DESCRIPTION: {type: string}
