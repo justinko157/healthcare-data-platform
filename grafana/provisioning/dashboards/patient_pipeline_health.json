@@ -13,7 +13,7 @@
     },
     {
       "id": 2, "type": "stat", "title": "Last run status",
-      "gridPos": {"x": 0, "y": 1, "w": 8, "h": 5},
+      "gridPos": {"x": 0, "y": 1, "w": 6, "h": 5},
       "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
       "targets": [{"refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
         "rawSql": "select case status when 'success' then 1 else 0 end as status from observability.pipeline_runs where finished_at is not null order by finished_at desc limit 1"}],
@@ -27,7 +27,7 @@
     },
     {
       "id": 3, "type": "stat", "title": "Hours since last successful load",
-      "gridPos": {"x": 8, "y": 1, "w": 8, "h": 5},
+      "gridPos": {"x": 6, "y": 1, "w": 6, "h": 5},
       "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
       "targets": [{"refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
         "rawSql": "select extract(epoch from (now() - max(finished_at))) / 3600.0 as hours from observability.pipeline_runs where status = 'success'"}],
@@ -38,7 +38,7 @@
     },
     {
       "id": 4, "type": "stat", "title": "dbt test pass rate (latest run)",
-      "gridPos": {"x": 16, "y": 1, "w": 8, "h": 5},
+      "gridPos": {"x": 12, "y": 1, "w": 6, "h": 5},
       "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
       "targets": [{"refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
         "rawSql": "select avg(case when status = 'pass' then 1.0 else 0.0 end) as pass_rate from observability.dbt_results where resource_type = 'test' and run_id = (select run_id from observability.pipeline_runs where finished_at is not null order by finished_at desc limit 1) having count(*) > 0"}],
@@ -46,6 +46,22 @@
         "noValue": "No dbt results for latest run",
         "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}},
       "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 13, "type": "stat", "title": "Data source (latest run)",
+      "gridPos": {"x": 18, "y": 1, "w": 6, "h": 5},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+        "rawSql": "select coalesce(data_source, 'unknown') as source from observability.pipeline_runs where finished_at is not null order by finished_at desc limit 1"}],
+      "fieldConfig": {"defaults": {
+        "mappings": [{"type": "value", "options": {
+          "synthea": {"text": "SYNTHEA", "color": "green"},
+          "sample": {"text": "SAMPLE", "color": "blue"},
+          "sample_fallback": {"text": "SAMPLE (Synthea failed)", "color": "orange"},
+          "unknown": {"text": "UNKNOWN", "color": "text"}}}],
+        "noValue": "No runs yet"}},
+      "options": {"colorMode": "background", "graphMode": "none", "textMode": "value",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "/^source$/", "values": false}}
     },
     {
       "id": 5, "type": "row", "title": "Trends (by batch date)", "collapsed": false,

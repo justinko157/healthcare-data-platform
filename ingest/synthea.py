@@ -262,7 +262,10 @@ def generate(
     use_sample: bool,
     java: str = "java",
 ) -> str:
-    """Write the batch to dest. Falls back to the sample instead of failing."""
+    """Write the batch to dest. Falls back to the sample instead of failing.
+
+    Returns the data source: "synthea", "sample" (requested) or "sample_fallback" (Synthea failed).
+    """
     batch_id = batch_id_for(batch_date)
     source = "sample"
     if use_sample:
@@ -274,5 +277,6 @@ def generate(
         except (OSError, subprocess.SubprocessError, SyntheaError) as exc:
             log.warning("Synthea unavailable (%s); falling back to sample_data/", exc)
             copy_sample(sample_dir, dest, batch_id)
+            source = "sample_fallback"
     validate_headers(dest)
     return source

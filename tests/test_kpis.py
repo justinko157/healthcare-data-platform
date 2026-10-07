@@ -1,6 +1,7 @@
 import duckdb
+import pytest
 
-from ingest.kpis import compute_kpis
+from ingest.kpis import compute_kpis, marts_batch_id
 
 
 def test_compute_kpis_from_marts():
@@ -27,3 +28,17 @@ def test_compute_kpis_from_marts():
         "avg_claim_cost:Medicare": 200.0,
         "avg_claim_cost:Aetna": 50.0,
     }
+
+
+def test_marts_batch_id_reads_build_info():
+    con = duckdb.connect()
+    con.execute("create schema marts")
+    con.execute("create table marts.build_info as select '20260101' as batch_id, now() as built_at")
+    assert marts_batch_id(lambda sql: con.execute(sql).fetchall()) == "20260101"
+
+
+def test_marts_batch_id_raises_when_build_info_is_missing():
+    # record_metrics catches this, skips KPIs and still finalizes the run.
+    con = duckdb.connect()
+    with pytest.raises(duckdb.CatalogException):
+        marts_batch_id(lambda sql: con.execute(sql).fetchall())

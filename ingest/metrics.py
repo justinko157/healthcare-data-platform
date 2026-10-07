@@ -52,9 +52,17 @@ def start_pipeline_run(conn, run_id: str, batch_date: date, warehouse: str) -> N
         values (%s, %s, %s, now(), 'running')
         on conflict (run_id) do update set batch_date = excluded.batch_date,
             warehouse = excluded.warehouse, started_at = now(),
-            finished_at = null, status = 'running'
+            finished_at = null, status = 'running', data_source = null
         """,
         (run_id, batch_date, warehouse),
+    )
+
+
+def set_run_source(conn, run_id: str, source: str) -> None:
+    """Record where the run's data came from: synthea, sample, or sample_fallback."""
+    conn.execute(
+        "update observability.pipeline_runs set data_source = %s where run_id = %s",
+        (source, run_id),
     )
 
 

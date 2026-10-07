@@ -76,6 +76,13 @@ def cmd_generate(args, settings: Settings) -> int:
             "generated_at": datetime.now(UTC).isoformat(),
         }
         (dest / synthea.MANIFEST).write_text(json.dumps(manifest, indent=2))
+    if _metrics_on(args, settings):
+
+        def record_source():
+            with metrics.connect(settings.observability_db_url) as conn:
+                metrics.set_run_source(conn, args.run_id, source)
+
+        _best_effort("data source", record_source)
     log.info("batch %s written to %s (source: %s)", batch_id, dest, source)
     return 0
 
@@ -166,10 +173,20 @@ def cmd_record_metrics(args, settings: Settings) -> int:
             try:
                 loader = loaders.get_loader(settings, role="TRANSFORMER")
                 try:
-                    values = kpis.compute_kpis(loader.query)
+                    built = kpis.marts_batch_id(loader.query)
+                    expected = synthea.batch_id_for(args.batch_date)
+                    # The marts are shared: another run may have rebuilt them since our dbt_build.
+                    values = kpis.compute_kpis(loader.query) if built == expected else None
                 finally:
                     loader.close()
-                metrics.record_kpis(conn, args.run_id, values)
+                if values is None:
+                    log.warning(
+                        "marts were built from batch %s, not %s; skipping KPIs for this run",
+                        built,
+                        expected,
+                    )
+                else:
+                    metrics.record_kpis(conn, args.run_id, values)
             except Exception:
                 log.exception("KPI capture failed; still finalizing the run")
                 conn.rollback()  # a failed write leaves the transaction aborted

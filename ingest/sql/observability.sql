@@ -9,6 +9,18 @@ create table if not exists observability.pipeline_runs (
     finished_at timestamptz,
     status      text        not null default 'running'
 );
+-- Added after first release. Guarded so the ALTER (and its exclusive lock) only runs on a volume
+-- that doesn't have the column yet, not on every connect.
+do $$
+begin
+    if not exists (
+        select 1 from information_schema.columns
+        where table_schema = 'observability' and table_name = 'pipeline_runs'
+          and column_name = 'data_source'
+    ) then
+        alter table observability.pipeline_runs add column data_source text;
+    end if;
+end $$;
 
 create table if not exists observability.task_runs (
     run_id     text not null,

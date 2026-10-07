@@ -69,7 +69,7 @@ def test_generate_falls_back_to_sample_when_jar_missing(tiny_sample, tmp_path):
         population=10,
         use_sample=False,
     )
-    assert source == "sample"
+    assert source == "sample_fallback"
     assert (dest / "patients.csv").exists()
 
 
@@ -85,7 +85,7 @@ def test_generate_falls_back_when_java_is_not_installed(tiny_sample, tmp_path):
         use_sample=False,
         java="definitely-not-a-java-binary",
     )
-    assert source == "sample"
+    assert source == "sample_fallback"
 
 
 def test_run_synthea_moves_csvs_into_dest(tiny_sample, tmp_path, monkeypatch):

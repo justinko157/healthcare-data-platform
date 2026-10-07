@@ -30,3 +30,9 @@ def compute_kpis(query: Callable[[str], list[tuple]]) -> list[tuple[str, float]]
     for payer, value in query(CLAIM_COST_BY_PAYER):
         out.append((f"avg_claim_cost:{payer}", float(value)))
     return out
+
+
+def marts_batch_id(query: Callable[[str], list[tuple]]) -> str:
+    """The batch the marts were last built from (dbt writes marts.build_info on every build)."""
+    ((batch_id,),) = query("select batch_id from marts.build_info")
+    return str(batch_id)

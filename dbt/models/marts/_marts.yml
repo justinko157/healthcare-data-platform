@@ -96,3 +96,10 @@ models:
       - {name: inpatient_count}
       - {name: emergency_count}
       - {name: total_claim_cost}
+
+  - name: build_info
+    description: One row naming the batch the marts were built from (read by record_metrics).
+    columns:
+      - name: batch_id
+        data_tests: [not_null]
+      - {name: built_at}
