@@ -12,6 +12,8 @@ variables {
   human_user                 = "TESTUSER"
   terraform_private_key_path = "tests/fixtures/dummy_key.p8"
   service_public_key_path    = "tests/fixtures/dummy_key.pub"
+  # Explicit, so a local terraform.tfvars (adopting a live account) never leaks into tests.
+  adopt_existing_account = false
 }
 
 run "foundation" {
