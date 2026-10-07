@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import duckdb
 import yaml
 
 from ingest.config import REPO_ROOT
@@ -176,3 +177,157 @@ def _test(raw, where: str) -> Test:
         return Test(name, severity, to=str(to), field=str(field).upper())
 
     return Test(name, severity)
+
+
+MAX_EXAMPLES = 5
+
+
+@dataclass(frozen=True)
+class RuleResult:
+    table: str
+    column: str  # "" for table-level rules
+    rule: str
+    severity: str
+    failing_rows: int
+    examples: tuple[str, ...] = ()
+
+    @property
+    def failed(self) -> bool:
+        return self.failing_rows > 0
+
+
+def check_batch(
+    batch_dir: Path, contracts: dict[str, Contract], dbt_vars: dict
+) -> list[RuleResult]:
+    """Check every table's CSV; return one result per rule, passing rules included."""
+    con = duckdb.connect()  # in-memory: nothing touches the warehouse
+    try:
+        headers: dict[str, dict[str, str]] = {}  # table -> {UPPER name: name as written}
+        results: list[RuleResult] = []
+        for table, contract in contracts.items():
+            results += _check_file(con, batch_dir / f"{table}.csv", contract, headers)
+        for table, contract in contracts.items():
+            if table in headers:
+                for column in contract.columns:
+                    results += _check_column(con, table, column, headers, dbt_vars)
+        return results
+    finally:
+        con.close()
+
+
+def _view(table: str) -> str:
+    return f'"csv_{table}"'
+
+
+def _ident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _check_file(con, path: Path, contract: Contract, headers: dict) -> list[RuleResult]:
+    table = contract.table
+
+    def table_rule(rule: str, failing: int, examples: tuple[str, ...] = ()) -> RuleResult:
+        return RuleResult(table, "", rule, "error", failing, examples)
+
+    if not path.is_file():
+        return [table_rule("file_present", 1)]
+    results = [table_rule("file_present", 0)]
+    source = path.as_posix().replace("'", "''")
+    try:
+        con.execute(
+            f"create or replace view {_view(table)} as select * from "
+            f"read_csv('{source}', header = true, all_varchar = true)"
+        )
+        (rows,) = con.execute(f"select count(*) from {_view(table)}").fetchone()
+        names = [r[0] for r in con.execute(f"describe {_view(table)}").fetchall()]
+    except duckdb.Error:
+        # The parser's message can quote a raw line, so it is not logged or stored.
+        return [*results, table_rule("readable", 1)]
+    results.append(table_rule("readable", 0))
+
+    header = {name.upper(): name for name in names}
+    missing = tuple(c.name for c in contract.columns if c.name not in header)
+    results.append(table_rule("columns", len(missing), missing))
+    if missing:
+        return results  # the table's other rules would only add noise
+    shortfall = max(contract.min_rows - rows, 0)
+    results.append(table_rule("min_rows", shortfall, (f"{rows} rows",) if shortfall else ()))
+    headers[table] = header
+    return results
+
+
+def _check_column(
+    con, table: str, column: Column, headers: dict, dbt_vars: dict
+) -> list[RuleResult]:
+    view = _view(table)
+    value = _ident(headers[table][column.name])
+    present = f"nullif({value}, '') is not null"
+    checks: list[tuple[str, str, str, list]] = []  # (rule, severity, failing-row condition, params)
+
+    cast = TYPES[column.type]
+    if cast:
+        broken = f"try_cast({value} as {cast}) is null"
+        if column.type == "integer":
+            # DuckDB rounds '2.5' to 3 when casting text to an integer; require whole digits.
+            broken += f" or not regexp_full_match(trim({value}), '[+-]?[0-9]+')"
+        checks.append((f"type:{column.type}", "error", f"{present} and ({broken})", []))
+    for test in column.tests:
+        if test.name == "not_null":
+            checks.append(("not_null", test.severity, f"not ({present})", []))
+        elif test.name == "unique":
+            dupes = (
+                f"select {value} from {view} where {present} group by {value} having count(*) > 1"
+            )
+            checks.append(("unique", test.severity, f"{present} and {value} in ({dupes})", []))
+        elif test.name == "accepted_values":
+            accepted = _accepted(test, dbt_vars, table, column.name)
+            checks.append(
+                (
+                    "accepted_values",
+                    test.severity,
+                    f"{present} and not list_contains(?, lower({value}))",
+                    [accepted],
+                )
+            )
+        elif test.name == "relationships":
+            target = headers.get(test.to)
+            if target is None or test.field not in target:
+                # The target's own file_present/readable/columns error already fails the run.
+                continue
+            key = _ident(target[test.field])
+            keys = f"select {key} from {_view(test.to)} where nullif({key}, '') is not null"
+            checks.append(
+                (
+                    f"relationships:{test.to}.{test.field}",
+                    test.severity,
+                    f"{present} and {value} not in ({keys})",
+                    [],
+                )
+            )
+
+    results = []
+    for rule, severity, condition, params in checks:
+        (failing,) = con.execute(
+            f"select count(*) from {view} where {condition}", params
+        ).fetchone()
+        examples: tuple[str, ...] = ()
+        if failing and not column.pii:
+            rows = con.execute(
+                f"select distinct {value} from {view} where {condition} "
+                f"order by 1 limit {MAX_EXAMPLES}",
+                params,
+            ).fetchall()
+            examples = tuple(str(r[0])[:100] for r in rows)
+        results.append(RuleResult(table, column.name, rule, severity, int(failing), examples))
+    return results
+
+
+def _accepted(test: Test, dbt_vars: dict, table: str, column: str) -> list[str]:
+    values = test.values
+    if test.values_from_var is not None:
+        if test.values_from_var not in dbt_vars:
+            raise ContractError(
+                f"{table}.yml: columns.{column}: dbt var '{test.values_from_var}' is not defined"
+            )
+        values = tuple(str(v) for v in dbt_vars[test.values_from_var])
+    return [v.lower() for v in values]
