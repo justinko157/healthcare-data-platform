@@ -9,6 +9,8 @@ create table if not exists observability.pipeline_runs (
     finished_at timestamptz,
     status      text        not null default 'running'
 );
+-- Added after first release; IF NOT EXISTS upgrades an existing volume in place.
+alter table observability.pipeline_runs add column if not exists data_source text;
 
 create table if not exists observability.task_runs (
     run_id     text not null,

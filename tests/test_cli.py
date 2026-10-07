@@ -274,6 +274,7 @@ def test_record_metrics_finalizes_when_record_kpis_aborts_the_transaction(env, p
     def boom(conn, run_id, values):
         conn.execute("select 1/0")
 
+    monkeypatch.setattr("ingest.kpis.marts_batch_id", lambda query: "20260101")
     monkeypatch.setattr("ingest.kpis.compute_kpis", lambda query: [("x", 1.0)])
     monkeypatch.setattr("ingest.metrics.record_kpis", boom)
     assert cli.main(["record-metrics", "--run-id", "r4", "--batch-date", "2026-01-01"]) == 0
@@ -282,3 +283,44 @@ def test_record_metrics_finalizes_when_record_kpis_aborts_the_transaction(env, p
             "select status from observability.pipeline_runs where run_id = 'r4'"
         ).fetchone()
     assert row == ("success",)
+
+
+def _all_pipeline_tasks_succeeded(url, run_id):
+    with metrics.connect(url) as conn:
+        for t in cli.PIPELINE_TASKS:
+            metrics.record_task(conn, run_id, t, "success", None, 1.0)
+
+
+def _kpi_count(url, run_id):
+    with metrics.connect(url) as conn:
+        return conn.execute(
+            "select count(*) from observability.kpi_snapshots where run_id = %s", (run_id,)
+        ).fetchone()[0]
+
+
+def test_record_metrics_skips_kpis_built_from_another_batch(env, pg_url, monkeypatch):
+    _all_pipeline_tasks_succeeded(pg_url, "r5")
+    # Another run rebuilt the marts for a different day before this run captured its KPIs.
+    monkeypatch.setattr("ingest.kpis.marts_batch_id", lambda query: "20251231")
+    monkeypatch.setattr("ingest.kpis.compute_kpis", lambda query: [("x", 1.0)])
+    assert cli.main(["record-metrics", "--run-id", "r5", "--batch-date", "2026-01-01"]) == 0
+    assert _kpi_count(pg_url, "r5") == 0
+
+
+def test_record_metrics_captures_kpis_for_its_own_batch(env, pg_url, monkeypatch):
+    _all_pipeline_tasks_succeeded(pg_url, "r6")
+    monkeypatch.setattr("ingest.kpis.marts_batch_id", lambda query: "20260101")
+    monkeypatch.setattr("ingest.kpis.compute_kpis", lambda query: [("x", 1.0)])
+    assert cli.main(["record-metrics", "--run-id", "r6", "--batch-date", "2026-01-01"]) == 0
+    assert _kpi_count(pg_url, "r6") == 1
+
+
+def test_generate_records_the_data_source(env, pg_url):
+    run = ["--run-id", "r7", "--batch-date", "2026-01-01"]
+    assert cli.main(["generate", *run, "--use-sample"]) == 0
+    assert cli.main(["generate", "--run-id", "r8", "--batch-date", "2026-01-02"]) == 0  # no jar
+    with metrics.connect(pg_url) as conn:
+        rows = dict(
+            conn.execute("select run_id, data_source from observability.pipeline_runs").fetchall()
+        )
+    assert rows == {"r7": "sample", "r8": "sample_fallback"}
