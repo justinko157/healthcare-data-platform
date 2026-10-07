@@ -1251,7 +1251,7 @@ Before writing it, confirm the stored user name with a query as the user. If it'
 - [ ] **Step 4: Init and plan**
 
 Run: `./scripts/tf.sh init -input=false && ./scripts/tf.sh plan -input=false -out=adopt.tfplan`
-Expected: `Plan: 43 to import, 0 to add, 2 to change, 0 to destroy.` The 2 changes are `schema["TRANSFORMER/STAGING"]` and `schema["TRANSFORMER/INTERMEDIATE"]`, with privileges going from `CREATE TABLE, CREATE VIEW, USAGE` to `CREATE VIEW, USAGE`.
+Expected: `Plan: 43 to import, 0 to add, 2 to change, 0 to destroy.` (or `3 to change`, when the third is `rsa_public_key` on `snowflake_service_user.hdp_service`: the provider doesn't read the key on import. Before applying, confirm `DESC USER HDP_SERVICE` RSA_PUBLIC_KEY_FP equals the fingerprint of `secrets/hdp_service_key.pub`.) The 2 changes are `schema["TRANSFORMER/STAGING"]` and `schema["TRANSFORMER/INTERMEDIATE"]`, with privileges going from `CREATE TABLE, CREATE VIEW, USAGE` to `CREATE VIEW, USAGE`.
 
 Fallback rules:
 - If other in-place changes appear on imported objects (fields `bootstrap.sql` never set, shown changing from a live value to the config's or to null), add those attribute names to a `lifecycle { ignore_changes = [...] }` block on that resource. Record each one in your report, then re-plan.
