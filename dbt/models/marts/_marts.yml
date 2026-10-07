@@ -1,0 +1,98 @@
+version: 2
+
+models:
+  - name: fct_encounters
+    description: One row per encounter, with provider, payer and claim totals.
+    columns:
+      - name: encounter_id
+        data_tests: [unique, not_null]
+      - name: patient_id
+        description: Hashed for every role except PHI_READER; joins to dim_patients.patient_id.
+        config: {meta: {pii: true, masking_policy: mask_patient_id}}
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_patients'), field: patient_id}
+      - name: provider_id
+        data_tests:
+          - relationships:
+              arguments: {to: ref('dim_providers'), field: provider_id}
+      - {name: provider_name}
+      - {name: provider_specialty}
+      - {name: payer_id}
+      - {name: payer_name}
+      - name: encounter_class
+        data_tests:
+          - accepted_values:
+              arguments: {values: "{{ var('encounter_classes') }}"}
+      - {name: encounter_code}
+      - {name: encounter_description}
+      - {name: started_at, data_tests: [not_null]}
+      - {name: stopped_at}
+      - {name: encounter_date}
+      - {name: length_of_stay_hours}
+      - {name: total_claim_cost}
+      - {name: claim_line_total, description: Sum of CHARGE claim lines for this encounter.}
+      - {name: claim_line_count}
+
+  - name: dim_patients
+    description: One row per patient. Identifying columns are masked for every role except PHI_READER.
+    columns:
+      - name: patient_id
+        config: {meta: {pii: true, masking_policy: mask_patient_id}}
+        data_tests: [unique, not_null]
+      - {name: name_prefix}
+      - {name: first_name, config: {meta: {pii: true, masking_policy: mask_pii_string}}}
+      - {name: last_name, config: {meta: {pii: true, masking_policy: mask_pii_string}}}
+      - {name: name_suffix}
+      - {name: maiden_name, config: {meta: {pii: true, masking_policy: mask_pii_string}}}
+      - {name: birth_date, config: {meta: {pii: true, masking_policy: mask_date_to_year}}}
+      - {name: death_date, config: {meta: {pii: true, masking_policy: mask_date_to_year}}}
+      - {name: age_years}
+      - {name: ssn, config: {meta: {pii: true, masking_policy: mask_pii_string}}}
+      - {name: drivers_license, config: {meta: {pii: true, masking_policy: mask_pii_string}}}
+      - {name: passport, config: {meta: {pii: true, masking_policy: mask_pii_string}}}
+      - {name: address, config: {meta: {pii: true, masking_policy: mask_pii_string}}}
+      - {name: city}
+      - {name: state}
+      - {name: county}
+      - {name: zip, config: {meta: {pii: true, masking_policy: mask_pii_string}}}
+      - {name: gender}
+      - {name: race}
+      - {name: ethnicity}
+      - {name: marital_status}
+
+  - name: dim_providers
+    columns:
+      - name: provider_id
+        data_tests: [unique, not_null]
+      - {name: provider_name}
+      - {name: gender}
+      - {name: specialty}
+      - {name: organization_id}
+      - {name: state}
+
+  - name: fct_readmissions_30d
+    description: One row per inpatient discharge, flagged if readmitted within 30 days.
+    columns:
+      - name: index_encounter_id
+        data_tests: [unique, not_null]
+      - name: patient_id
+        config: {meta: {pii: true, masking_policy: mask_patient_id}}
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_patients'), field: patient_id}
+      - {name: discharged_at}
+      - {name: readmission_encounter_id}
+      - {name: readmitted_at}
+      - {name: is_readmitted, data_tests: [not_null]}
+
+  - name: agg_daily_utilization
+    columns:
+      - name: encounter_date
+        data_tests: [unique, not_null]
+      - {name: encounter_count}
+      - {name: inpatient_count}
+      - {name: emergency_count}
+      - {name: total_claim_cost}

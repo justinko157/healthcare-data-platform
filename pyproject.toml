@@ -1,0 +1,36 @@
+[project]
+name = "healthcare-data-platform"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.4,<1.5",
+    "psycopg[binary]>=3.2",
+    "pyyaml>=6",
+    "snowflake-connector-python>=3.12",
+]
+
+[dependency-groups]
+dbt = [
+    "dbt-core>=1.10,<2",
+    "dbt-duckdb>=1.9",
+    "dbt-snowflake>=1.9",
+]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+default-groups = ["dev", "dbt"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["dbt/target", "dbt/dbt_packages", "docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python-and-dbt:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hdp_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/hdp_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --locked
+      - name: Lint (ruff)
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: Unit tests (pytest)
+        run: uv run pytest -q
+      - name: dbt build on DuckDB with sample_data
+        run: |
+          uv run python -m ingest.cli generate --batch-date 2026-01-01 --use-sample
+          uv run python -m ingest.cli load --batch-date 2026-01-01
+          uv run python -m ingest.cli dbt-build --batch-date 2026-01-01
+
+  dag-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Airflow image
+        run: docker build -f airflow/Dockerfile -t hdp-airflow .
+      - name: Check DAG integrity inside the image
+        run: >-
+          docker run --rm -v "$PWD:/opt/project" -w /opt/project
+          --entrypoint python hdp-airflow airflow/tests/check_dag_integrity.py

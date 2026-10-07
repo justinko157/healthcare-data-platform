@@ -1,0 +1,108 @@
+{
+  "uid": "patient-pipeline-health",
+  "title": "Patient Pipeline Health",
+  "tags": ["healthcare", "pipeline"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {"from": "now-30d", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "Status", "collapsed": false,
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1}
+    },
+    {
+      "id": 2, "type": "stat", "title": "Last run status",
+      "gridPos": {"x": 0, "y": 1, "w": 8, "h": 5},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+        "rawSql": "select case status when 'success' then 1 else 0 end as status from observability.pipeline_runs where finished_at is not null order by finished_at desc limit 1"}],
+      "fieldConfig": {"defaults": {
+        "mappings": [{"type": "value", "options": {
+          "1": {"text": "SUCCESS", "color": "green"},
+          "0": {"text": "FAILED", "color": "red"}}}],
+        "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]},
+        "noValue": "No runs yet"}},
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 3, "type": "stat", "title": "Hours since last successful load",
+      "gridPos": {"x": 8, "y": 1, "w": 8, "h": 5},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+        "rawSql": "select extract(epoch from (now() - max(finished_at))) / 3600.0 as hours from observability.pipeline_runs where status = 'success'"}],
+      "fieldConfig": {"defaults": {"unit": "h", "decimals": 1,
+        "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 26}]},
+        "noValue": "Never"}},
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 4, "type": "stat", "title": "dbt test pass rate (latest run)",
+      "gridPos": {"x": 16, "y": 1, "w": 8, "h": 5},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "editorMode": "code",
+        "rawSql": "select avg(case when status = 'pass' then 1.0 else 0.0 end) as pass_rate from observability.dbt_results where resource_type = 'test' and run_id = (select run_id from observability.pipeline_runs where finished_at is not null order by finished_at desc limit 1) having count(*) > 0"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 1, "min": 0, "max": 1,
+        "noValue": "No dbt results for latest run",
+        "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}},
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 5, "type": "row", "title": "Trends (by batch date)", "collapsed": false,
+      "gridPos": {"x": 0, "y": 6, "w": 24, "h": 1}
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Rows loaded per table",
+      "gridPos": {"x": 0, "y": 7, "w": 8, "h": 8},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "editorMode": "code",
+        "rawSql": "select r.batch_date::timestamptz as time, l.table_name as metric, l.rows_loaded as value from observability.load_stats l join observability.pipeline_runs r using (run_id) where $__timeFilter(r.batch_date::timestamptz) and l.status = 'success' order by 1"}],
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "showPoints": "always"}}}
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Run and task durations",
+      "gridPos": {"x": 8, "y": 7, "w": 8, "h": 8},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "editorMode": "code",
+        "rawSql": "select r.batch_date::timestamptz as time, t.task_id as metric, t.duration_s as value from observability.task_runs t join observability.pipeline_runs r using (run_id) where $__timeFilter(r.batch_date::timestamptz) and t.duration_s is not null union all select r.batch_date::timestamptz, 'pipeline total', extract(epoch from (r.finished_at - r.started_at)) from observability.pipeline_runs r where $__timeFilter(r.batch_date::timestamptz) and r.finished_at is not null order by 1"}],
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "showPoints": "always"}}}
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "dbt test failures by test",
+      "gridPos": {"x": 16, "y": 7, "w": 8, "h": 8},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "editorMode": "code",
+        "rawSql": "select r.batch_date::timestamptz as time, d.node as metric, count(*) as value from observability.dbt_results d join observability.pipeline_runs r using (run_id) where $__timeFilter(r.batch_date::timestamptz) and d.resource_type = 'test' and d.status in ('fail', 'error') group by 1, 2 order by 1"}],
+      "fieldConfig": {"defaults": {"unit": "short", "noValue": "No failing tests",
+        "custom": {"drawStyle": "bars", "fillOpacity": 80}}}
+    },
+    {
+      "id": 9, "type": "row", "title": "Healthcare KPIs", "collapsed": false,
+      "gridPos": {"x": 0, "y": 15, "w": 24, "h": 1}
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Encounters per day (30-day average)",
+      "gridPos": {"x": 0, "y": 16, "w": 8, "h": 8},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "editorMode": "code",
+        "rawSql": "select r.batch_date::timestamptz as time, 'encounters per day' as metric, k.value from observability.kpi_snapshots k join observability.pipeline_runs r using (run_id) where $__timeFilter(r.batch_date::timestamptz) and k.metric = 'encounters_per_day' order by 1"}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 1, "custom": {"showPoints": "always"}}}
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "30-day readmission rate",
+      "gridPos": {"x": 8, "y": 16, "w": 8, "h": 8},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "editorMode": "code",
+        "rawSql": "select r.batch_date::timestamptz as time, 'readmission rate' as metric, k.value from observability.kpi_snapshots k join observability.pipeline_runs r using (run_id) where $__timeFilter(r.batch_date::timestamptz) and k.metric = 'readmission_rate_30d' order by 1"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 1, "custom": {"showPoints": "always"}}}
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Average claim cost by payer",
+      "gridPos": {"x": 16, "y": 16, "w": 8, "h": 8},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "editorMode": "code",
+        "rawSql": "select r.batch_date::timestamptz as time, replace(k.metric, 'avg_claim_cost:', '') as metric, k.value from observability.kpi_snapshots k join observability.pipeline_runs r using (run_id) where $__timeFilter(r.batch_date::timestamptz) and k.metric like 'avg_claim_cost:%' order by 1"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "custom": {"showPoints": "always"}}}
+    }
+  ]
+}

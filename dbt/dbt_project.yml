@@ -1,0 +1,29 @@
+name: healthcare
+version: "1.0.0"
+config-version: 2
+profile: healthcare
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+clean-targets: ["target"]
+
+vars:
+  # Synthea encounter classes; accepted_values on fct_encounters reads this list.
+  encounter_classes:
+    [ambulatory, emergency, inpatient, outpatient, urgentcare, wellness, home, hospice, snf, virtual]
+  # Masking policies defined in snowflake/policies.sql. tests/test_dbt_project.py checks they match.
+  masking_policies: [mask_pii_string, mask_date_to_year, mask_patient_id]
+
+models:
+  healthcare:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table
+      +post-hook: "{{ secure_model() }}"

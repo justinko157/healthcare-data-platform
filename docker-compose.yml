@@ -1,0 +1,100 @@
+name: healthcare-data-platform
+
+x-airflow-env: &airflow-env
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+  AIRFLOW__CORE__DAGS_FOLDER: /opt/project/airflow/dags
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+  # DuckDB allows one writer process. Backfill runs don't count toward the DAG's
+  # max_active_runs, so a one-slot default pool makes them share the warehouse with
+  # the scheduled run instead of failing on the file lock (applied when the metadata
+  # DB is first created). The "upstream" weight rule gives later tasks priority, which
+  # normally keeps one run's tasks together so record_metrics reads its own marts. It is
+  # not a guarantee: while a task waits in up_for_retry the slot is free, and another
+  # run's tasks can run in between.
+  AIRFLOW__CORE__DEFAULT_POOL_TASK_SLOT_COUNT: "1"
+  AIRFLOW__CORE__DEFAULT_TASK_WEIGHT_RULE: upstream
+  # Local demo only: no Airflow login screen (and Grafana defaults to admin/admin), so
+  # both ports are bound to 127.0.0.1 and unreachable from other hosts. Never use this
+  # setting on a shared host.
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+  WAREHOUSE: ${WAREHOUSE:-duckdb}
+  DUCKDB_PATH: /opt/project/data/warehouse.duckdb
+  OBSERVABILITY_DB_URL: postgresql://airflow:airflow@postgres:5432/airflow
+  SYNTHEA_POPULATION: ${SYNTHEA_POPULATION:-2000}
+  SYNTHEA_USE_SAMPLE: ${SYNTHEA_USE_SAMPLE:-false}
+  SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT:-}
+  SNOWFLAKE_USER: ${SNOWFLAKE_USER:-HDP_SERVICE}
+  SNOWFLAKE_PRIVATE_KEY_PATH: ${SNOWFLAKE_PRIVATE_KEY_PATH:-}
+  SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE:-HDP_WH}
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+  image: hdp-airflow
+  # Linux: set AIRFLOW_UID=$(id -u) in .env so the container can write ./data and dbt/target.
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment: *airflow-env
+  volumes:
+    - .:/opt/project
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:-grafana_reader}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./ingest/sql/observability.sql:/docker-entrypoint-initdb.d/01_observability.sql:ro
+      - ./postgres/02_grafana_reader.sh:/docker-entrypoint-initdb.d/02_grafana_reader.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      retries: 20
+
+  airflow:
+    <<: *airflow-common
+    command: standalone
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
+  seed-history:
+    <<: *airflow-common
+    entrypoint: ["bash", "/opt/project/scripts/backfill.sh"]
+    restart: "no"
+    depends_on:
+      airflow:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/patient_pipeline_health.json
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:-grafana_reader}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

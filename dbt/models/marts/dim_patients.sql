@@ -1,0 +1,23 @@
+select
+    patient_id,
+    name_prefix,
+    first_name,
+    last_name,
+    name_suffix,
+    maiden_name,
+    birth_date,
+    death_date,
+    {{ dbt.datediff('birth_date', 'coalesce(death_date, current_date)', 'year') }} as age_years,
+    ssn,
+    drivers_license,
+    passport,
+    address,
+    city,
+    state,
+    county,
+    zip,
+    gender,
+    race,
+    ethnicity,
+    marital_status
+from {{ ref('stg_patients') }}

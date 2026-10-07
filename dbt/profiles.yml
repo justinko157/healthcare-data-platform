@@ -1,0 +1,18 @@
+healthcare:
+  target: "{{ env_var('WAREHOUSE', 'duckdb') }}"
+  outputs:
+    duckdb:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_PATH', '../data/warehouse.duckdb') }}"
+      schema: main
+      threads: 4
+    snowflake:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', '') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH', '') }}"
+      role: TRANSFORMER
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'HDP_WH') }}"
+      database: HEALTHCARE
+      schema: STAGING
+      threads: 4

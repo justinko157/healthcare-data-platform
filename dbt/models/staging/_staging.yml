@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: stg_patients
+    description: One row per synthetic patient in the batch. Contains PII; never exposed to analysts.
+    columns:
+      - name: patient_id
+        config: {meta: {pii: true}}
+        data_tests: [unique, not_null]
+      - {name: first_name, config: {meta: {pii: true}}}
+      - {name: last_name, config: {meta: {pii: true}}}
+      - {name: maiden_name, config: {meta: {pii: true}}}
+      - {name: birth_date, config: {meta: {pii: true}}}
+      - {name: death_date, config: {meta: {pii: true}}}
+      - {name: ssn, config: {meta: {pii: true}}}
+      - {name: drivers_license, config: {meta: {pii: true}}}
+      - {name: passport, config: {meta: {pii: true}}}
+      - {name: address, config: {meta: {pii: true}}}
+      - {name: zip, config: {meta: {pii: true}}}
+
+  - name: stg_encounters
+    columns:
+      - name: encounter_id
+        data_tests: [unique, not_null]
+      - name: patient_id
+        data_tests: [not_null]
+      - name: started_at
+        data_tests: [not_null]
+
+  - name: stg_claims
+    columns:
+      - name: claim_id
+        data_tests: [unique, not_null]
+
+  - name: stg_providers
+    columns:
+      - name: provider_id
+        data_tests: [unique, not_null]
+
+  - name: stg_payers
+    columns:
+      - name: payer_id
+        data_tests: [unique, not_null]

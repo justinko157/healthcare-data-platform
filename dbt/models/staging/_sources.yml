@@ -1,0 +1,19 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    config:
+      loaded_at_field: _loaded_at
+      freshness:
+        warn_after: {count: 26, period: hour}
+        error_after: {count: 48, period: hour}
+    tables:
+      - name: patients
+      - name: encounters
+      - name: conditions
+      - name: medications
+      - name: claims
+      - name: claims_transactions
+      - name: providers
+      - name: payers
