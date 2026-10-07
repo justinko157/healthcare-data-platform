@@ -14,6 +14,7 @@ from pathlib import Path
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
 
+from ingest.contracts import RuleResult
 from ingest.loaders import LoadResult
 
 log = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ def connect(url: str) -> psycopg.Connection:
     return conn
 
 
-CHILD_TABLES = ("task_runs", "load_stats", "dbt_results", "kpi_snapshots")
+CHILD_TABLES = ("task_runs", "load_stats", "contract_results", "dbt_results", "kpi_snapshots")
 
 
 def start_pipeline_run(conn, run_id: str, batch_date: date, warehouse: str) -> None:
@@ -104,6 +105,20 @@ def record_load_stats(conn, run_id: str, results: list[LoadResult]) -> None:
                 status = excluded.status, error = excluded.error, loaded_at = now()
             """,
             (run_id, r.table, r.rows_loaded, r.status, r.error),
+        )
+
+
+def record_contract_results(conn, run_id: str, results: list[RuleResult]) -> None:
+    """Replace the run's contract results, so a task retry doesn't leave stale rows."""
+    conn.execute("delete from observability.contract_results where run_id = %s", (run_id,))
+    for r in results:
+        conn.execute(
+            """
+            insert into observability.contract_results
+                (run_id, table_name, column_name, rule, severity, failing_rows, examples)
+            values (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (run_id, r.table, r.column, r.rule, r.severity, r.failing_rows, list(r.examples)),
         )
 
 

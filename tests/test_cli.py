@@ -324,3 +324,78 @@ def test_generate_records_the_data_source(env, pg_url):
             conn.execute("select run_id, data_source from observability.pipeline_runs").fetchall()
         )
     assert rows == {"r7": "sample", "r8": "sample_fallback"}
+
+
+def batch_csv(data_dir, table, day="20260101"):
+    return data_dir / "batches" / day / f"{table}.csv"
+
+
+def duplicate_first_row(path):
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    path.write_text("".join([*lines, lines[1]]), encoding="utf-8")
+
+
+def replace_in_csv(path, old, new):
+    path.write_text(path.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+
+
+def test_check_contracts_passes_on_a_generated_batch(env):
+    args = ["--batch-date", "2026-01-01"]
+    assert cli.main(["generate", *args, "--use-sample"]) == 0
+    assert cli.main(["check-contracts", *args]) == 0
+
+
+def test_check_contracts_fails_on_an_error_rule(env, caplog):
+    args = ["--batch-date", "2026-01-01"]
+    assert cli.main(["generate", *args, "--use-sample"]) == 0
+    duplicate_first_row(batch_csv(env, "patients"))
+    assert cli.main(["check-contracts", *args]) == 1
+    assert "patients.ID unique" in caplog.text
+    assert "1 error(s)" in caplog.text
+
+
+def test_check_contracts_passes_with_only_warnings(env, caplog):
+    args = ["--batch-date", "2026-01-01"]
+    assert cli.main(["generate", *args, "--use-sample"]) == 0
+    replace_in_csv(batch_csv(env, "encounters"), "ambulatory", "teleport")
+    assert cli.main(["check-contracts", *args]) == 0
+    assert "encounters.ENCOUNTERCLASS accepted_values" in caplog.text
+    assert "teleport" in caplog.text  # not a pii column: examples are logged
+
+
+def test_check_contracts_never_logs_pii_values(env, caplog):
+    args = ["--batch-date", "2026-01-01"]
+    assert cli.main(["generate", *args, "--use-sample"]) == 0
+    path = batch_csv(env, "patients")
+    first_id = path.read_text(encoding="utf-8").splitlines()[1].split(",")[0]
+    duplicate_first_row(path)
+    assert cli.main(["check-contracts", *args]) == 1
+    assert "patients.ID unique" in caplog.text
+    assert first_id not in caplog.text
+
+
+def test_check_contracts_fails_when_the_batch_is_missing(env):
+    assert cli.main(["check-contracts", "--batch-date", "2026-01-01"]) == 1
+
+
+def test_check_contracts_records_every_rule_and_replaces_a_rerun(env, pg_url):
+    run = ["--run-id", "r6", "--batch-date", "2026-01-01"]
+    assert cli.main(["generate", *run, "--use-sample"]) == 0
+    duplicate_first_row(batch_csv(env, "patients"))
+    assert cli.main(["check-contracts", *run]) == 1
+    assert cli.main(["check-contracts", *run]) == 1  # a retry must not duplicate rows
+    with metrics.connect(pg_url) as conn:
+        total, failing = conn.execute(
+            "select count(*), count(*) filter (where failing_rows > 0) "
+            "from observability.contract_results where run_id = 'r6'"
+        ).fetchone()
+        unique = conn.execute(
+            "select severity, failing_rows, examples from observability.contract_results "
+            "where run_id = 'r6' and table_name = 'patients' and column_name = 'ID' "
+            "and rule = 'unique'"
+        ).fetchone()
+        states = metrics.task_states(conn, "r6")
+    assert total > 100
+    assert failing == 1
+    assert unique == ("error", 2, [])  # pii: count only
+    assert states["check_contracts"] == "failed"

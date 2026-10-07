@@ -58,7 +58,14 @@ def test_connect_creates_schema(pg):
             "select table_name from information_schema.tables where table_schema = 'observability'"
         )
     }
-    assert tables == {"pipeline_runs", "task_runs", "load_stats", "dbt_results", "kpi_snapshots"}
+    assert tables == {
+        "pipeline_runs",
+        "task_runs",
+        "load_stats",
+        "contract_results",
+        "dbt_results",
+        "kpi_snapshots",
+    }
 
 
 def test_track_task_records_success_and_failure(pg):

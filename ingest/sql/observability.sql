@@ -42,6 +42,19 @@ create table if not exists observability.load_stats (
     primary key (run_id, table_name)
 );
 
+-- One row per contract rule per run, passing rules included (failing_rows = 0).
+-- examples is always empty for pii: true columns.
+create table if not exists observability.contract_results (
+    run_id       text   not null,
+    table_name   text   not null,
+    column_name  text   not null default '',
+    rule         text   not null,
+    severity     text   not null,
+    failing_rows bigint not null,
+    examples     text[] not null default '{}',
+    primary key (run_id, table_name, column_name, rule)
+);
+
 create table if not exists observability.dbt_results (
     run_id        text not null,
     node          text not null,
