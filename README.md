@@ -10,12 +10,12 @@ Every record is synthetic; no real patient data is ever used.
 flowchart LR
   S[Synthea<br/>2,000 patients/day] --> G[generate]
   subgraph dag["Airflow DAG: patient_pipeline"]
-    G --> L[load_raw] --> P[apply_security] --> D[dbt_build] --> M[record_metrics]
+    G --> C[check_contracts] --> L[load_raw] --> P[apply_security] --> D[dbt_build] --> M[record_metrics]
   end
   L --> RAW[(RAW)]
   D --> STG[(STAGING / INTERMEDIATE)] --> MARTS[(MARTS<br/>masked)]
   P -. masking policies .-> MARTS
-  G & L & P & D & M -. run metrics .-> PG[(Postgres<br/>observability)]
+  G & C & L & P & D & M -. run metrics .-> PG[(Postgres<br/>observability)]
   PG --> GF[Grafana<br/>dashboard + alert]
   MARTS --> A[ANALYST: masked]
   MARTS --> R[PHI_READER: unmasked]
@@ -122,6 +122,19 @@ flowchart LR
 
 Tests: `unique`/`not_null` on keys, `relationships` from facts to dimensions, and `accepted_values` on encounter class. Custom tests check that encounter stop ≥ start, that claim totals equal the sum of their lines, that the readmission rate is in [0, 1], and PII coverage. Source freshness warns after 26 hours.
 
+## Data contracts
+
+Before anything is loaded, `check_contracts` checks the day's CSVs against [`contracts/`](contracts/), one YAML file per RAW table:
+
+```yaml
+PATIENT:        {type: uuid, pii: true, tests: [not_null, {relationships: {to: patients, field: ID}}]}
+ENCOUNTERCLASS: {type: string, tests: [{accepted_values: {values_from: {dbt_var: encounter_classes}, severity: warn}}]}
+```
+
+- **Rules:** required columns, types (`uuid`, `date`, `timestamp`, `decimal`, `integer`), `not_null`, `unique`, `accepted_values`, `relationships` within the batch, and a minimum row count. Each CSV is read once into a scratch DuckDB file and every rule is one SQL query over it, so the warehouse is never touched.
+- **Severity:** an `error` fails the task, so nothing reaches RAW and yesterday's data stays in place. A `warn` is recorded and the run continues.
+- **Results:** every rule's result, passing or not, goes to `observability.contract_results` and the dashboard's "Data contracts" row. Columns marked `pii: true` report counts only, never example values.
+
 ## Observability
 
 ![Patient Pipeline Health dashboard](docs/img/dashboard.png)
@@ -131,12 +144,14 @@ Every pipeline step records its own outcome in Postgres (`observability` schema)
 - **Status:** last run, hours since the last successful load (red after 26 hours), dbt test pass rate.
 - **Trends:** rows loaded, durations, failing dbt tests.
 - **Healthcare:** encounters per day, 30-day readmission rate, average claim cost by payer.
+- **Data contracts:** the latest run's contract status and its failing rules.
 
 The alert **"Patient pipeline stale or failed"** fires when there has been no successful load for 26 hours or the latest run failed. To get notified, add a contact point in Grafana (Alerting → Contact points → email or Slack webhook) and route the `severity=critical` label to it.
 
 ## Design decisions
 
 - **Idempotent loads.** Each day is a batch (`_BATCH_ID`). A load deletes that batch and reloads it in one transaction, so rerunning a day never duplicates rows.
+- **Contracts checked before load, with a small checker.** Checking the CSVs before loading keeps bad batches out of RAW and costs no warehouse credits, in either warehouse mode. The checker is one small module that compiles YAML to DuckDB SQL, rather than Soda or Great Expectations: it needs no extra dependency in the Airflow image, and its rule names match dbt's. The contracts are also the only list of columns the pipeline expects.
 - **No unmasked window.** dbt rebuilds marts with `CREATE OR REPLACE`, which drops masking policies. The `secure_model` post-hook re-attaches the policies **before** granting `SELECT` to analysts.
 - **Masking that can't be bypassed by role inheritance.** Policies check `CURRENT_ROLE() = 'PHI_READER'`, so neither SYSADMIN's role hierarchy nor secondary roles unmask data. Policies are updated with `ALTER ... SET BODY`, because Snowflake refuses `CREATE OR REPLACE` on a policy that is attached to a column.
 - **Neither the pipeline nor Terraform holds ACCOUNTADMIN.** Terraform logs in as a key-pair service user with SYSADMIN (warehouse, database, schemas) and SECURITYADMIN (roles, users, grants). ACCOUNTADMIN is used once, by a human, to create that user. The pipeline's service user is key-pair only and holds LOADER, TRANSFORMER and PLATFORM_ADMIN.
@@ -151,4 +166,3 @@ The alert **"Patient pipeline stale or failed"** fires when there has been no su
 ## Next milestones
 
 - OpenTelemetry tracing across the Airflow tasks
-- Data contracts on the RAW layer

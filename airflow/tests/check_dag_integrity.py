@@ -15,7 +15,8 @@ except ImportError:
 DAGS = Path(__file__).resolve().parent.parent / "dags"
 EXPECTED_UPSTREAM = {
     "generate": set(),
-    "load_raw": {"generate"},
+    "check_contracts": {"generate"},
+    "load_raw": {"check_contracts"},
     "apply_security": {"load_raw"},
     "dbt_build": {"apply_security"},
     "record_metrics": {"dbt_build"},
@@ -41,6 +42,8 @@ def main() -> int:
     assert record.retries == 0
     # generate falls back to the sample instead of retrying; load and dbt retry twice.
     assert dag.get_task("generate").retries == 0
+    # A broken batch stays broken: retrying the contract check would only delay the failure.
+    assert dag.get_task("check_contracts").retries == 0
     assert dag.get_task("load_raw").retries == 2
     assert dag.get_task("dbt_build").retries == 2
 

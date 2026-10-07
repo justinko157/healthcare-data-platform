@@ -1,4 +1,4 @@
-"""patient_pipeline: Synthea -> RAW -> masking policies -> dbt -> observability.
+"""patient_pipeline: Synthea -> contract check -> RAW -> masking policies -> dbt -> observability.
 
 Every task shells out to the project CLI in /opt/venv (see airflow/Dockerfile), so dbt, DuckDB
 and the Snowflake connector never share a Python environment with Airflow itself. Business
@@ -45,6 +45,11 @@ with DAG(
         + RUN_ARGS
         + " {{ '--use-sample' if params.use_sample else '' }}",
     )
+    check_contracts = BashOperator(
+        task_id="check_contracts",
+        retries=0,  # the same CSVs give the same result; a retry can't fix a broken batch
+        bash_command=CLI + " check-contracts " + RUN_ARGS,
+    )
     load_raw = BashOperator(task_id="load_raw", bash_command=CLI + " load " + RUN_ARGS)
     apply_security = BashOperator(
         task_id="apply_security", bash_command=CLI + " apply-security " + RUN_ARGS
@@ -57,4 +62,4 @@ with DAG(
         bash_command=CLI + " record-metrics " + RUN_ARGS,
     )
 
-    generate >> load_raw >> apply_security >> dbt_build >> record_metrics
+    generate >> check_contracts >> load_raw >> apply_security >> dbt_build >> record_metrics
