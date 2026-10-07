@@ -4,7 +4,8 @@
 organization_name = "MYORG"
 account_name      = "MYACCOUNT"
 
-# Your Snowflake user name as Snowflake stores it (SHOW USERS; usually upper case).
+# Your Snowflake login user name. Case doesn't matter: Terraform upper-cases it, as Snowflake
+# stores unquoted user names.
 human_user = "MY_LOGIN"
 
 # true only if this account was first set up with the old snowflake/bootstrap.sql.
