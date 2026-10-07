@@ -28,7 +28,7 @@ jobs:
       TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/hdp_test
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
       - name: Install
