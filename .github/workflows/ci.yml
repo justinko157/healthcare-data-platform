@@ -61,3 +61,17 @@ jobs:
         run: >-
           docker run --rm -v "$PWD:/opt/project" -w /opt/project
           --entrypoint python hdp-airflow airflow/tests/check_dag_integrity.py
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: fmt, init, validate
+        run: |
+          ./scripts/tf.sh fmt -check -recursive
+          ./scripts/tf.sh init -backend=false -input=false
+          ./scripts/tf.sh validate
+      - name: Offline tests (mocked provider)
+        run: ./scripts/tf.sh test
+      - name: tflint
+        run: docker run --rm -v "$PWD:/data" -w /data/terraform ghcr.io/terraform-linters/tflint:v0.64.0

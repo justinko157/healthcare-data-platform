@@ -9,7 +9,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WAREHOUSES = ("duckdb", "snowflake")
-# Fixed: profiles.yml, bootstrap.sql and the masking policies all name HEALTHCARE.
+# Fixed: profiles.yml, terraform/database.tf and the masking policies all name HEALTHCARE.
 SNOWFLAKE_DATABASE = "HEALTHCARE"
 SNOWFLAKE_REQUIRED = ("SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PRIVATE_KEY_PATH")
 

@@ -56,10 +56,21 @@ export DATA_DIR=/tmp/hdp-dev DUCKDB_PATH=/tmp/hdp-dev/warehouse.duckdb
 
 ## Snowflake mode: masking and least-privilege roles
 
-1. Start a Snowflake trial and run `./scripts/snowflake_keygen.sh`.
-2. In Snowsight, as ACCOUNTADMIN, run `snowflake/bootstrap.sql` (fill in the public key and your login name).
-3. Copy `.env.example` to `.env` (on Linux, keep your `AIRFLOW_UID` line: uncomment it there), set `WAREHOUSE=snowflake`, `SNOWFLAKE_ACCOUNT` and `SNOWFLAKE_PRIVATE_KEY_PATH=/opt/project/secrets/hdp_service_key.p8` (the key from step 1), then run `docker compose up -d`.
-4. Trigger `patient_pipeline`, then run `snowflake/demo_queries.sql`.
+Account setup is Terraform ([`terraform/`](terraform/)), run through Docker so there is nothing to install:
+
+1. Start a Snowflake trial (Enterprise edition: masking policies need it).
+2. Create two key pairs: `./scripts/snowflake_keygen.sh` (the pipeline's user) and `./scripts/snowflake_keygen.sh terraform` (the user Terraform logs in as).
+3. In Snowsight, as ACCOUNTADMIN, run **part 1** of [`terraform/bootstrap_terraform_user.sql`](terraform/bootstrap_terraform_user.sql), pasting in the `terraform` public key. This is the only SQL run by hand.
+4. Copy `terraform/terraform.tfvars.example` to `terraform/terraform.tfvars` and fill in your account identifier and user name. Then run:
+   ```bash
+   ./scripts/tf.sh init
+   ./scripts/tf.sh plan
+   ./scripts/tf.sh apply
+   ```
+5. Copy `.env.example` to `.env` (on Linux, keep your `AIRFLOW_UID` line: uncomment it there), set `WAREHOUSE=snowflake`, `SNOWFLAKE_ACCOUNT` and `SNOWFLAKE_PRIVATE_KEY_PATH=/opt/project/secrets/hdp_service_key.p8`, then run `docker compose up -d`.
+6. Trigger `patient_pipeline`, then run `snowflake/demo_queries.sql`.
+
+**Adopting an account set up before Terraform** (with the old `bootstrap.sql`): also run **part 2** of the snippet. It moves ownership to SYSADMIN and SECURITYADMIN, so Terraform can manage the objects. Then set `adopt_existing_account = true` in `terraform.tfvars`. The first `plan` imports everything and shows only one change: CREATE TABLE revoked from TRANSFORMER on the view-only schemas. Leave the flag `false` on a fresh account: imports of objects that don't exist fail.
 
 | Role | Can do |
 |---|---|
@@ -128,7 +139,8 @@ The alert **"Patient pipeline stale or failed"** fires when there has been no su
 - **Idempotent loads.** Each day is a batch (`_BATCH_ID`). A load deletes that batch and reloads it in one transaction, so rerunning a day never duplicates rows.
 - **No unmasked window.** dbt rebuilds marts with `CREATE OR REPLACE`, which drops masking policies. The `secure_model` post-hook re-attaches the policies **before** granting `SELECT` to analysts.
 - **Masking that can't be bypassed by role inheritance.** Policies check `CURRENT_ROLE() = 'PHI_READER'`, so neither SYSADMIN's role hierarchy nor secondary roles unmask data. Policies are updated with `ALTER ... SET BODY`, because Snowflake refuses `CREATE OR REPLACE` on a policy that is attached to a column.
-- **The pipeline never holds ACCOUNTADMIN.** Account setup (`bootstrap.sql`) is a one-time human step. The service user is key-pair only and holds LOADER, TRANSFORMER and PLATFORM_ADMIN.
+- **Neither the pipeline nor Terraform holds ACCOUNTADMIN.** Terraform logs in as a key-pair service user with SYSADMIN (warehouse, database, schemas) and SECURITYADMIN (roles, users, grants). ACCOUNTADMIN is used once, by a human, to create that user. The pipeline's service user is key-pair only and holds LOADER, TRANSFORMER and PLATFORM_ADMIN.
+- **Access as code, drift made visible.** Roles and grants are maps in `terraform/grants.tf`, and offline `terraform test` runs in CI pin the masking invariants: analysts never get SELECT or future grants on MARTS, and the service user has no secondary roles. Moving the hand-run setup into Terraform surfaced two over-grants (CREATE TABLE on view-only schemas, a warehouse grant for a role that only runs DDL), and both were cut. State is a local file; a team would use a remote backend.
 - **Airflow orchestrates; the CLI does the work.** Every task runs `python -m ingest.cli ...` in its own venv, so dbt and the Snowflake connector never conflict with Airflow's packages, and everything runs the same locally.
 - **The DAG run fails when any step fails.** `record_metrics` runs after failures (`all_done`) so they reach the dashboard. It then exits non-zero so Airflow's run state matches.
 - **Postgres instead of Prometheus for metrics.** These are per-run batch facts, not scraped time series. Grafana reads Postgres natively, and it's already in the stack.
@@ -138,6 +150,5 @@ The alert **"Patient pipeline stale or failed"** fires when there has been no su
 
 ## Next milestones
 
-- Terraform for Snowflake roles, warehouses and grants
 - OpenTelemetry tracing across the Airflow tasks
 - Data contracts on the RAW layer

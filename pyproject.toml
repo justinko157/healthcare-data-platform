@@ -17,6 +17,7 @@ dbt = [
 ]
 dev = [
     "pytest>=8",
+    "python-hcl2>=8.1.4",
     "ruff>=0.6",
 ]
 
