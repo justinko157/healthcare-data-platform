@@ -130,15 +130,15 @@
       "id": 15, "type": "stat", "title": "Contract check (latest run)",
       "gridPos": {"x": 0, "y": 25, "w": 6, "h": 8},
       "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
-      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "editorMode": "code", "rawSql": "with latest as (select r.run_id from observability.pipeline_runs r where exists (select 1 from observability.contract_results c where c.run_id = r.run_id) order by r.started_at desc limit 1) select case when count(c.rule) filter (where c.severity = 'error') > 0 then 'errors' when count(c.rule) > 0 then 'warnings' else 'pass' end as level from latest left join observability.contract_results c on c.run_id = latest.run_id and c.failing_rows > 0"}],
-      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"pass": {"text": "PASS", "color": "green"}, "warnings": {"text": "WARNINGS", "color": "yellow"}, "errors": {"text": "ERRORS (load blocked)", "color": "red"}}}], "noValue": "No contract results yet"}},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "editorMode": "code", "rawSql": "with latest as (select run_id from observability.pipeline_runs order by started_at desc limit 1) select case when count(c.rule) = 0 then 'no results' when count(c.rule) filter (where c.failing_rows > 0 and c.severity = 'error') > 0 then 'errors' when count(c.rule) filter (where c.failing_rows > 0) > 0 then 'warnings' else 'pass' end as level from latest left join observability.contract_results c on c.run_id = latest.run_id group by latest.run_id"}],
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"pass": {"text": "PASS", "color": "green"}, "warnings": {"text": "WARNINGS", "color": "yellow"}, "errors": {"text": "ERRORS (load blocked)", "color": "red"}, "no results": {"text": "NO RESULTS (check did not record)", "color": "orange"}}}], "noValue": "No contract results yet"}},
       "options": {"colorMode": "background", "graphMode": "none", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "/^level$/", "values": false}}
     },
     {
       "id": 16, "type": "table", "title": "Failing contract rules (latest run)",
       "gridPos": {"x": 6, "y": 25, "w": 18, "h": 8},
       "datasource": {"type": "grafana-postgresql-datasource", "uid": "observability-pg"},
-      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "editorMode": "code", "rawSql": "with latest as (select r.run_id from observability.pipeline_runs r where exists (select 1 from observability.contract_results c where c.run_id = r.run_id) order by r.started_at desc limit 1) select c.severity, c.table_name as \"table\", nullif(c.column_name, '') as \"column\", c.rule, c.failing_rows as \"failing rows\", array_to_string(c.examples, ', ') as examples from observability.contract_results c join latest on c.run_id = latest.run_id where c.failing_rows > 0 order by c.severity, c.table_name, c.column_name, c.rule"}],
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "editorMode": "code", "rawSql": "with latest as (select run_id from observability.pipeline_runs order by started_at desc limit 1) select c.severity, c.table_name as \"table\", nullif(c.column_name, '') as \"column\", c.rule, c.failing_rows as \"failing rows\", array_to_string(c.examples, ', ') as examples from observability.contract_results c join latest on c.run_id = latest.run_id where c.failing_rows > 0 order by c.severity, c.table_name, c.column_name, c.rule"}],
       "fieldConfig": {"defaults": {"noValue": "No failing rules"}},
       "options": {"showHeader": true}
     }
