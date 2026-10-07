@@ -7,7 +7,17 @@ resource "snowflake_warehouse" "hdp" {
   initially_suspended = true
 
   lifecycle {
-    # Only meaningful at creation; an adopted warehouse must not show a diff for it.
-    ignore_changes = [initially_suspended]
+    # initially_suspended only matters at creation. The rest are account defaults bootstrap.sql
+    # never set; an adopted warehouse reports them, and resetting them would be noise.
+    ignore_changes = [
+      initially_suspended,
+      enable_query_acceleration,
+      query_acceleration_max_scale_factor,
+      generation,
+      warehouse_type,
+      scaling_policy,
+      min_cluster_count,
+      max_cluster_count,
+    ]
   }
 }

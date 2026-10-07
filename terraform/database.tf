@@ -19,4 +19,10 @@ resource "snowflake_schema" "this" {
   provider = snowflake.sysadmin
   database = snowflake_database.healthcare.name
   name     = each.key
+
+  lifecycle {
+    # An imported schema reports these as "false" where config says "default"; for is_transient
+    # that diff would even force a replacement (drop and recreate, losing data).
+    ignore_changes = [is_transient, with_managed_access]
+  }
 }

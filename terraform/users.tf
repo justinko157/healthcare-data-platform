@@ -20,6 +20,11 @@ resource "snowflake_service_user" "hdp_service" {
   default_role                   = "LOADER"
   default_secondary_roles_option = "NONE"
   rsa_public_key                 = local.service_public_key
+
+  lifecycle {
+    # Defaults bootstrap.sql never set; the adopted user reports them, and resetting them is noise.
+    ignore_changes = [disabled, display_name, login_name, mins_to_unlock]
+  }
 }
 
 resource "snowflake_grant_account_role" "service" {
