@@ -63,7 +63,11 @@ create user if not exists HDP_SERVICE
     type = service
     default_warehouse = HDP_WH
     default_role = LOADER
+    default_secondary_roles = ()
     rsa_public_key = '<PUBLIC_KEY>';
+-- New users default to secondary roles ALL, which would let a LOADER connection also use
+-- TRANSFORMER and PLATFORM_ADMIN privileges. Repeated as ALTER so a re-run fixes an existing user.
+alter user HDP_SERVICE set default_secondary_roles = ();
 grant role LOADER to user HDP_SERVICE;
 grant role TRANSFORMER to user HDP_SERVICE;
 grant role PLATFORM_ADMIN to user HDP_SERVICE;
