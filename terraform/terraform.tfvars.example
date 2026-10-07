@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+# Account identifier from Snowsight (profile menu -> Account -> Copy account identifier),
+# e.g. "MVIMJXA-PA76665" -> organization_name = "MVIMJXA", account_name = "PA76665".
+organization_name = "MYORG"
+account_name      = "MYACCOUNT"
+
+# Your Snowflake user name as Snowflake stores it (SHOW USERS; usually upper case).
+human_user = "MY_LOGIN"
+
+# true only if this account was first set up with the old snowflake/bootstrap.sql.
+adopt_existing_account = false

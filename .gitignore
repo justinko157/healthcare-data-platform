@@ -12,3 +12,10 @@ dbt/target/
 dbt/logs/
 dbt/.user.yml
 logs/
+
+# Terraform
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.*
+terraform/terraform.tfvars
+terraform/crash.log
