@@ -7,6 +7,7 @@ DuckDB query over the batch's CSVs, read as text, so a broken batch never reache
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -200,22 +201,25 @@ def check_batch(
     batch_dir: Path, contracts: dict[str, Contract], dbt_vars: dict
 ) -> list[RuleResult]:
     """Check every table's CSV; return one result per rule, passing rules included."""
-    con = duckdb.connect()  # in-memory: nothing touches the warehouse
-    try:
-        headers: dict[str, dict[str, str]] = {}  # table -> {UPPER name: name as written}
-        results: list[RuleResult] = []
-        for table, contract in contracts.items():
-            results += _check_file(con, batch_dir / f"{table}.csv", contract, headers)
-        for table, contract in contracts.items():
-            if table in headers:
-                for column in contract.columns:
-                    results += _check_column(con, table, column, headers, dbt_vars)
-        return results
-    finally:
-        con.close()
+    # Each CSV is read once into a scratch DuckDB file (not memory: a real batch is ~1 GB),
+    # keeping only the contract's columns; every rule then queries that table.
+    with tempfile.TemporaryDirectory(prefix="hdp-contracts-") as scratch:
+        con = duckdb.connect(str(Path(scratch) / "check.duckdb"))
+        try:
+            headers: dict[str, dict[str, str]] = {}  # table -> {UPPER name: name as written}
+            results: list[RuleResult] = []
+            for table, contract in contracts.items():
+                results += _check_file(con, batch_dir / f"{table}.csv", contract, headers)
+            for table, contract in contracts.items():
+                if table in headers:
+                    for column in contract.columns:
+                        results += _check_column(con, table, column, headers, dbt_vars)
+            return results
+        finally:
+            con.close()
 
 
-def _view(table: str) -> str:
+def _table(table: str) -> str:
     return f'"csv_{table}"'
 
 
@@ -231,35 +235,42 @@ def _check_file(con, path: Path, contract: Contract, headers: dict) -> list[Rule
 
     if not path.is_file():
         return [table_rule("file_present", 1)]
-    results = [table_rule("file_present", 0)]
+    present = table_rule("file_present", 0)
+    unreadable = [present, table_rule("readable", 1)]
     source = path.as_posix().replace("'", "''")
+    reader = f"read_csv('{source}', header = true, all_varchar = true)"
+    # A parser error's message can quote a raw line, so it is never logged or stored.
     try:
-        con.execute(
-            f"create or replace view {_view(table)} as select * from "
-            f"read_csv('{source}', header = true, all_varchar = true)"
-        )
-        (rows,) = con.execute(f"select count(*) from {_view(table)}").fetchone()
-        names = [r[0] for r in con.execute(f"describe {_view(table)}").fetchall()]
+        names = [r[0] for r in con.execute(f"describe select * from {reader}").fetchall()]
     except duckdb.Error:
-        # The parser's message can quote a raw line, so it is not logged or stored.
-        return [*results, table_rule("readable", 1)]
-    results.append(table_rule("readable", 0))
+        return unreadable
 
     header = {name.upper(): name for name in names}
     missing = tuple(c.name for c in contract.columns if c.name not in header)
-    results.append(table_rule("columns", len(missing), missing))
     if missing:
-        return results  # the table's other rules would only add noise
+        # The table's other rules would only add noise.
+        return [present, table_rule("readable", 0), table_rule("columns", len(missing), missing)]
+    columns = ", ".join(_ident(header[c.name]) for c in contract.columns)
+    try:
+        con.execute(f"create or replace table {_table(table)} as select {columns} from {reader}")
+        (rows,) = con.execute(f"select count(*) from {_table(table)}").fetchone()
+    except duckdb.Error:
+        return unreadable
+
     shortfall = max(contract.min_rows - rows, 0)
-    results.append(table_rule("min_rows", shortfall, (f"{rows} rows",) if shortfall else ()))
     headers[table] = header
-    return results
+    return [
+        present,
+        table_rule("readable", 0),
+        table_rule("columns", 0),
+        table_rule("min_rows", shortfall, (f"{rows} rows",) if shortfall else ()),
+    ]
 
 
 def _check_column(
     con, table: str, column: Column, headers: dict, dbt_vars: dict
 ) -> list[RuleResult]:
-    view = _view(table)
+    view = _table(table)
     value = _ident(headers[table][column.name])
     present = f"nullif({value}, '') is not null"
     checks: list[tuple[str, str, str, list]] = []  # (rule, severity, failing-row condition, params)
@@ -295,7 +306,7 @@ def _check_column(
                 # The target's own file_present/readable/columns error already fails the run.
                 continue
             key = _ident(target[test.field])
-            keys = f"select {key} from {_view(test.to)} where nullif({key}, '') is not null"
+            keys = f"select {key} from {_table(test.to)} where nullif({key}, '') is not null"
             checks.append(
                 (
                     f"relationships:{test.to}.{test.field}",
